@@ -26,6 +26,27 @@ async function run() {
     const db = client.db("LocalChefBazar");
     const mealsCollection = db.collection("meals");
     const reviewsCollection = db.collection('reviews');
+    const usersCollection = db.collection("users");
+
+
+
+    app.post("/users", async (req, res) => {
+  const user = req.body;
+
+  const existingUser = await usersCollection.findOne({ email: user.email });
+  if (existingUser) {
+    return res.send({ message: "User already exists", insertedId: null });
+  }
+
+  const result = await usersCollection.insertOne({
+    name: user.name,
+    email: user.email,
+    role: "user", 
+    createdAt: new Date(),
+  });
+
+  res.send(result);
+});
 
 
 
