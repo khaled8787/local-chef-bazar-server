@@ -83,6 +83,38 @@ app.get("/all-users", verifyJWT, verifyAdmin, async (req, res) => {
 });
 
 
+app.delete("/users/:id", async (req, res) => {
+  try {
+    const id = req.params.id;
+
+    const query = { _id: new ObjectId(id) };
+
+    const result = await usersCollection.deleteOne(query);
+
+    if (result.deletedCount === 0) {
+      return res.status(404).send({
+        success: false,
+        message: "User not found!",
+      });
+    }
+
+    res.send({
+      success: true,
+      message: "User deleted successfully",
+      result,
+    });
+
+  } catch (error) {
+    console.error("User delete failed:", error);
+    res.status(500).send({
+      success: false,
+      message: "Internal Server Error",
+    });
+  }
+});
+
+
+
 app.patch("/users/admin/:id", async (req, res) => {
   const id = req.params.id;
   const filter = { _id: new ObjectId(id) };
