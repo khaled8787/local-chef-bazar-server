@@ -1,5 +1,5 @@
 const express = require('express');
-const { MongoClient, ServerApiVersion } = require('mongodb');
+const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const cors = require('cors');
 const jwt = require("jsonwebtoken");
 require('dotenv').config();
@@ -67,7 +67,66 @@ async function run() {
   });
 };
 
-console.log("JWT_SECRET =", process.env.JWT_SECRET);
+const verifyAdmin = async (req, res, next) => {
+  const email = req.decoded.email;
+  const user = await usersCollection.findOne({ email });
+  if (!user || user.role !== "admin") {
+    return res.status(403).send({ message: "Access denied" });
+  }
+  next();
+};
+
+
+app.get("/all-users", verifyJWT, verifyAdmin, async (req, res) => {
+  const users = await usersCollection.find().toArray();
+  res.send(users);
+});
+
+
+app.patch("/users/admin/:id", async (req, res) => {
+  const id = req.params.id;
+  const filter = { _id: new ObjectId(id) };
+
+  const updateDoc = {
+    $set: { role: "admin" },
+  };
+
+  const result = await usersCollection.updateOne(filter, updateDoc);
+  res.send(result);
+});
+
+
+
+
+// 🔹 Admin-only: Get all users
+app.get("/users", verifyJWT, verifyAdmin, async (req, res) => {
+  try {
+    const users = await usersCollection.find().toArray();
+    res.send(users);
+  } catch (err) {
+    res.status(500).send({ message: "Failed to fetch users", error: err });
+  }
+});
+
+// 🔹 Admin-only: Get all chefs
+app.get("/chefs", verifyJWT, verifyAdmin, async (req, res) => {
+  try {
+    const chefs = await usersCollection.find({ role: "chef" }).toArray();
+    res.send(chefs);
+  } catch (err) {
+    res.status(500).send({ message: "Failed to fetch chefs", error: err });
+  }
+});
+
+// 🔹 Admin-only: Get all orders
+app.get("/orders", verifyJWT, verifyAdmin, async (req, res) => {
+  try {
+    const orders = await ordersCollection.find().toArray();
+    res.send(orders);
+  } catch (err) {
+    res.status(500).send({ message: "Failed to fetch orders", error: err });
+  }
+});
 
 
 
@@ -81,7 +140,6 @@ console.log("JWT_SECRET =", process.env.JWT_SECRET);
   res.send({ token });
 });
 
-    // Latest 6 reviews for homepage
 app.get("/home-reviews", async (req, res) => {
   try {
     const reviews = await reviewsCollection
