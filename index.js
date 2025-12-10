@@ -43,6 +43,87 @@ async function run() {
 });
 
 
+app.get("/meals", async (req, res) => {
+  const sort = req.query.sort === "desc" ? -1 : 1;
+
+  const meals = await mealsCollection
+    .find()
+    .sort({ price: sort })
+    .toArray();
+
+  res.send(meals);
+});
+
+
+
+
+
+app.delete("/meals/:id", async (req, res) => {
+  const result = await mealsCollection.deleteOne({ _id: new ObjectId(req.params.id) });
+  res.send(result);
+});
+
+// 🔥 Get meals by chef email
+app.get("/meals/by-chef/:email", async (req, res) => {
+  const email = req.params.email;
+  try {
+    const result = await mealsCollection.find({ userEmail: email }).toArray();
+    res.send(result);
+  } catch (error) {
+    console.error(error);
+    res.status(500).send({ message: "Something went wrong", error });
+  }
+});
+
+
+
+
+
+
+app.put("/meals/:id", async (req, res) => {
+  const body = req.body;
+  const updateDoc = {
+    $set: body,
+  };
+  const result = await mealsCollection.updateOne(
+    { _id: new ObjectId(req.params.id) },
+    updateDoc
+  );
+
+  res.send(result);
+});
+
+
+
+
+ // CREATE MEAL (Chef adds a meal)
+app.post("/meals", async (req, res) => {
+  try {
+    const meal = req.body;
+
+    // automatic timestamp
+    meal.createdAt = new Date();
+
+    const result = await mealsCollection.insertOne(meal);
+
+    res.send({
+      success: true,
+      message: "Meal created successfully",
+      result
+    });
+
+  } catch (err) {
+    res.status(500).send({
+      success: false,
+      message: "Meal creation failed",
+      error: err
+    });
+  }
+});
+
+
+
+
 
     app.post("/users", async (req, res) => {
   const user = req.body;
@@ -239,15 +320,7 @@ app.get("/home-reviews", async (req, res) => {
 });
 
 
-   app.get("/meals", async (req, res) => {
-  try {
-    const limit = parseInt(req.query.limit) || 6; // query ?limit=6
-    const meals = await mealsCollection.find().limit(limit).toArray();
-    res.send(meals);
-  } catch (err) {
-    res.status(500).send({ message: "Failed to fetch meals", error: err });
-  }
-});
+   
 
 
 
