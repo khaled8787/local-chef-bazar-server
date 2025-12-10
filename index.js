@@ -27,6 +27,20 @@ async function run() {
     const mealsCollection = db.collection("meals");
     const reviewsCollection = db.collection('reviews');
     const usersCollection = db.collection("users");
+    const requestsCollection = db.collection("requests");
+
+
+
+
+    app.post("/requests", async (req, res) => {
+  try {
+    const request = req.body; // {_id, userName, userEmail, requestType, requestStatus, requestTime}
+    const result = await requestsCollection.insertOne(request);
+    res.send({ success: true, result });
+  } catch (err) {
+    res.status(500).send({ success: false, message: "Failed to create request", error: err });
+  }
+});
 
 
 
@@ -41,6 +55,7 @@ async function run() {
   const result = await usersCollection.insertOne({
     name: user.name,
     email: user.email,
+    photo: user.photoURL,
     role: "user", 
     createdAt: new Date(),
   });
@@ -81,6 +96,43 @@ app.get("/all-users", verifyJWT, verifyAdmin, async (req, res) => {
   const users = await usersCollection.find().toArray();
   res.send(users);
 });
+
+
+// MAKE CHEF (Role Update)
+app.put('/users/chef/:id', async (req, res) => {
+  const id = req.params.id;
+
+  const filter = { _id: new ObjectId(id) };
+  const updateDoc = { $set: { role: "chef" } };
+
+  const result = await usersCollection.updateOne(filter, updateDoc);
+  res.send(result);
+});
+
+
+app.get('/users/:email', async (req, res) => {
+  const email = req.params.email;
+  const user = await usersCollection.findOne({ email });
+  res.send(user);
+});
+
+
+
+ app.put("/chefs/status/:id", verifyJWT, verifyAdmin, async (req, res) => {
+      const id = req.params.id;
+      const { status } = req.body; // active / inactive
+
+      try {
+        const filter = { _id: new ObjectId(id) };
+        const updateDoc = { $set: { status } };
+        const result = await usersCollection.updateOne(filter, updateDoc);
+        res.send(result);
+      } catch (err) {
+        res.status(500).send({ message: "Failed to update chef status", error: err });
+      }
+    });
+
+
 
 
 app.delete("/users/:id", async (req, res) => {
