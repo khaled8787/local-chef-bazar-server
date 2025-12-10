@@ -34,7 +34,7 @@ async function run() {
 
     app.post("/requests", async (req, res) => {
   try {
-    const request = req.body; // {_id, userName, userEmail, requestType, requestStatus, requestTime}
+    const request = req.body; 
     const result = await requestsCollection.insertOne(request);
     res.send({ success: true, result });
   } catch (err) {
@@ -63,7 +63,6 @@ app.delete("/meals/:id", async (req, res) => {
   res.send(result);
 });
 
-// 🔥 Get meals by chef email
 app.get("/meals/by-chef/:email", async (req, res) => {
   const email = req.params.email;
   try {
