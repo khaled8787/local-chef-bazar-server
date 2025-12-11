@@ -29,8 +29,26 @@ async function run() {
     const usersCollection = db.collection("users");
     const requestsCollection = db.collection("requests");
     const favoritesCollection = db.collection('favorite');
+    const ordersCollection = db.collection('orders');
 
 
+
+     const verifyJWT = (req, res, next) => {
+  const authHeader = req.headers.authorization;
+
+  if (!authHeader)
+    return res.status(401).send({ message: "Unauthorized" });
+
+  const token = authHeader.split(" ")[1];
+
+  jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
+    if (err)
+      return res.status(403).send({ message: "Forbidden" });
+
+    req.decoded = decoded;
+    next();
+  });
+};
 
 
     app.post("/requests", async (req, res) => {
@@ -42,6 +60,63 @@ async function run() {
     res.status(500).send({ success: false, message: "Failed to create request", error: err });
   }
 });
+
+
+// app.js বা server.js তে যুক্ত করো
+
+app.post("/orders", async (req, res) => {
+  try {
+    const orderData = req.body; // যা কিছু পাঠানো হয়েছে
+    const result = await ordersCollection.insertOne(orderData);
+    res.send({ insertedId: result.insertedId });
+  } catch (err) {
+    res.status(500).send({ error: "Server error" });
+  }
+});
+
+
+app.get("/orders", verifyJWT, async (req, res) => {
+  try {
+    const orders = await ordersCollection.find().toArray();
+    res.send(orders);
+  } catch (err) {
+    res.status(500).send({ error: "Failed to fetch orders" });
+  }
+});
+
+
+
+app.patch("/orders/:id/status", verifyJWT, async (req, res) => {
+  const { status } = req.body; // "cancelled", "accepted", "delivered"
+  const orderId = req.params.id;
+
+  try {
+    // Update order status
+    const result = await ordersCollection.updateOne(
+      { _id: new ObjectId(orderId) },
+      { $set: { orderStatus: status } }
+    );
+
+    if (result.modifiedCount) {
+      return res.send({ success: true });
+    } else {
+      return res.status(400).send({ success: false, message: "Failed to update order" });
+    }
+  } catch (err) {
+    console.error(err);
+    res.status(500).send({ error: "Server error" });
+  }
+});
+
+
+app.get("/orders/user/:email", verifyJWT, async (req, res) => {
+  const email = req.params.email;
+
+  const result = await ordersCollection.find({ userEmail: email }).toArray();
+  res.send(result);
+});
+
+
 
 
 app.get("/meals", async (req, res) => {
@@ -58,6 +133,13 @@ app.get("/meals", async (req, res) => {
 
 app.post("/reviews", async (req, res) => {
   const result = await reviewsCollection.insertOne(req.body);
+  res.send(result);
+});
+
+app.get("/meals/:id", async (req, res) => {
+  const id = req.params.id;
+  const query = { _id: new ObjectId(id) };
+  const result = await mealsCollection.findOne(query);
   res.send(result);
 });
 
@@ -163,22 +245,7 @@ app.post("/meals", async (req, res) => {
 
 
 
-    const verifyJWT = (req, res, next) => {
-  const authHeader = req.headers.authorization;
-
-  if (!authHeader)
-    return res.status(401).send({ message: "Unauthorized" });
-
-  const token = authHeader.split(" ")[1];
-
-  jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
-    if (err)
-      return res.status(403).send({ message: "Forbidden" });
-
-    req.decoded = decoded;
-    next();
-  });
-};
+   
 
 const verifyAdmin = async (req, res, next) => {
   const email = req.decoded.email;
