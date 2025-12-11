@@ -28,6 +28,7 @@ async function run() {
     const reviewsCollection = db.collection('reviews');
     const usersCollection = db.collection("users");
     const requestsCollection = db.collection("requests");
+    const favoritesCollection = db.collection('favorite');
 
 
 
@@ -52,6 +53,23 @@ app.get("/meals", async (req, res) => {
     .toArray();
 
   res.send(meals);
+});
+
+
+app.post("/reviews", async (req, res) => {
+  const result = await reviewsCollection.insertOne(req.body);
+  res.send(result);
+});
+
+
+app.post("/favorites", async (req, res) => {
+  const { userEmail, mealId } = req.body;
+
+  const exist = await favoritesCollection.findOne({ userEmail, mealId });
+  if (exist) return res.send({ message: "already_exist" });
+
+  const result = await favoritesCollection.insertOne(req.body);
+  res.send(result);
 });
 
 
