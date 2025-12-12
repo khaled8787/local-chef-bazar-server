@@ -199,6 +199,36 @@ app.patch("/reviews/:id", verifyJWT, async (req, res) => {
 
 
 
+// Get favorite meals by user email
+app.get("/favorites/user/:email", verifyJWT, async (req, res) => {
+  try {
+    const email = req.params.email;
+    const favorites = await favoritesCollection
+      .find({ userEmail: email })
+      .sort({ dateAdded: -1 })
+      .toArray();
+    res.send(favorites);
+  } catch (err) {
+    console.error(err);
+    res.status(500).send({ error: "Failed to fetch favorite meals" });
+  }
+});
+
+// Delete favorite meal
+app.delete("/favorites/:id", verifyJWT, async (req, res) => {
+  try {
+    const id = req.params.id;
+    const result = await favoritesCollection.deleteOne({ _id: new ObjectId(id) });
+    res.send(result);
+  } catch (err) {
+    console.error(err);
+    res.status(500).send({ error: "Failed to remove favorite meal" });
+  }
+});
+
+
+
+
 app.post("/orders", async (req, res) => {
   try {
     const orderData = req.body; 
