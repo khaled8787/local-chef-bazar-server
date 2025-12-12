@@ -147,6 +147,57 @@ app.patch("/orders/:id/pay", async (req, res) => {
 
 
 
+app.get("/reviews/user/:name", verifyJWT, async (req, res) => {
+  try {
+    const name = req.params.name;
+    const reviews = await reviewsCollection
+      .find({ reviewerName: name })
+      .sort({ date: -1 })
+      .toArray();
+    res.send(reviews);
+  } catch (err) {
+    console.error(err);
+    res.status(500).send({ error: "Failed to fetch reviews" });
+  }
+});
+
+// Delete a review
+app.delete("/reviews/:id", verifyJWT, async (req, res) => {
+  try {
+    const id = req.params.id;
+    const result = await reviewsCollection.deleteOne({ _id: new ObjectId(id) });
+    if (result.deletedCount) {
+      res.send({ success: true });
+    } else {
+      res.status(404).send({ success: false, message: "Review not found" });
+    }
+  } catch (err) {
+    console.error(err);
+    res.status(500).send({ error: "Failed to delete review" });
+  }
+});
+
+// Update a review
+app.patch("/reviews/:id", verifyJWT, async (req, res) => {
+  try {
+    const id = req.params.id;
+    const { rating, comment } = req.body;
+    const result = await reviewsCollection.updateOne(
+      { _id: new ObjectId(id) },
+      { $set: { rating, comment } }
+    );
+    if (result.modifiedCount) {
+      res.send({ success: true });
+    } else {
+      res.status(400).send({ success: false, message: "Failed to update review" });
+    }
+  } catch (err) {
+    console.error(err);
+    res.status(500).send({ error: "Failed to update review" });
+  }
+});
+
+
 
 app.post("/orders", async (req, res) => {
   try {
