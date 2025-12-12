@@ -6,6 +6,8 @@ require('dotenv').config();
 
 const app = express();
 const port = process.env.PORT || 3000;
+const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
+
 
 app.use(cors());
 app.use(express.json());
@@ -30,6 +32,7 @@ async function run() {
     const requestsCollection = db.collection("requests");
     const favoritesCollection = db.collection('favorite');
     const ordersCollection = db.collection('orders');
+    const paymentsCollection = db.collection('payments');
 
 
 
@@ -62,11 +65,92 @@ async function run() {
 });
 
 
-// app.js বা server.js তে যুক্ত করো
+app.post("/create-payment-intent", verifyJWT, async (req, res) => {
+  const { price } = req.body;
+  const amount = parseInt(price * 100); // Stripe amount requires cents
+
+  try {
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: amount,
+      currency: "usd",
+      payment_method_types: ["card"],
+    });
+
+    res.send({
+      clientSecret: paymentIntent.client_secret,
+    });
+  } catch (error) {
+    console.log(error);
+    res.status(500).send({ error: "Payment Intent Failed" });
+  }
+});
+
+
+app.post("/payments", verifyJWT, async (req, res) => {
+  const payment = req.body;
+
+  try {
+    // Save payment history
+    const paymentResult = await paymentsCollection.insertOne(payment);
+
+    // Update order payment status
+    await ordersCollection.updateOne(
+      { _id: new ObjectId(payment.orderId) },
+      { $set: { paymentStatus: "paid" } }
+    );
+
+    res.send({ success: true, paymentResult });
+  } catch (err) {
+    console.log(err);
+    res.status(500).send({ error: "Payment Save Failed" });
+  }
+});
+
+
+// GET order by ID
+app.get("/orders/:id", verifyJWT, async (req, res) => {
+  try {
+    const orderId = req.params.id;
+    const order = await ordersCollection.findOne({ _id: new ObjectId(orderId) });
+    if (!order) {
+      return res.status(404).send({ error: "Order not found" });
+    }
+    res.send(order);
+  } catch (err) {
+    console.error(err);
+    res.status(500).send({ error: "Failed to fetch order" });
+  }
+});
+
+
+// Example: server/index.js
+app.patch("/orders/:id/pay", async (req, res) => {
+  const orderId = req.params.id;
+  const { paymentInfo } = req.body; // payment result বা stripe info
+
+  try {
+    const result = await ordersCollection.updateOne(
+      { _id: new ObjectId(orderId) },
+      { $set: { paymentStatus: "paid", paymentInfo } }
+    );
+
+    if (result.modifiedCount) {
+      res.send({ success: true });
+    } else {
+      res.status(400).send({ success: false, message: "Failed to update order" });
+    }
+  } catch (err) {
+    console.error(err);
+    res.status(500).send({ error: "Server error" });
+  }
+});
+
+
+
 
 app.post("/orders", async (req, res) => {
   try {
-    const orderData = req.body; // যা কিছু পাঠানো হয়েছে
+    const orderData = req.body; 
     const result = await ordersCollection.insertOne(orderData);
     res.send({ insertedId: result.insertedId });
   } catch (err) {
@@ -87,11 +171,10 @@ app.get("/orders", verifyJWT, async (req, res) => {
 
 
 app.patch("/orders/:id/status", verifyJWT, async (req, res) => {
-  const { status } = req.body; // "cancelled", "accepted", "delivered"
+  const { status } = req.body; 
   const orderId = req.params.id;
 
   try {
-    // Update order status
     const result = await ordersCollection.updateOne(
       { _id: new ObjectId(orderId) },
       { $set: { orderStatus: status } }
@@ -195,12 +278,10 @@ app.put("/meals/:id", async (req, res) => {
 
 
 
- // CREATE MEAL (Chef adds a meal)
 app.post("/meals", async (req, res) => {
   try {
     const meal = req.body;
 
-    // automatic timestamp
     meal.createdAt = new Date();
 
     const result = await mealsCollection.insertOne(meal);
@@ -263,7 +344,6 @@ app.get("/all-users", verifyJWT, verifyAdmin, async (req, res) => {
 });
 
 
-// MAKE CHEF (Role Update)
 app.put('/users/chef/:id', async (req, res) => {
   const id = req.params.id;
 
@@ -285,7 +365,7 @@ app.get('/users/:email', async (req, res) => {
 
  app.put("/chefs/status/:id", verifyJWT, verifyAdmin, async (req, res) => {
       const id = req.params.id;
-      const { status } = req.body; // active / inactive
+      const { status } = req.body; 
 
       try {
         const filter = { _id: new ObjectId(id) };
@@ -347,7 +427,6 @@ app.patch("/users/admin/:id", async (req, res) => {
 
 
 
-// 🔹 Admin-only: Get all users
 app.get("/users", verifyJWT, verifyAdmin, async (req, res) => {
   try {
     const users = await usersCollection.find().toArray();
@@ -357,7 +436,6 @@ app.get("/users", verifyJWT, verifyAdmin, async (req, res) => {
   }
 });
 
-// 🔹 Admin-only: Get all chefs
 app.get("/chefs", verifyJWT, verifyAdmin, async (req, res) => {
   try {
     const chefs = await usersCollection.find({ role: "chef" }).toArray();
@@ -367,7 +445,6 @@ app.get("/chefs", verifyJWT, verifyAdmin, async (req, res) => {
   }
 });
 
-// 🔹 Admin-only: Get all orders
 app.get("/orders", verifyJWT, verifyAdmin, async (req, res) => {
   try {
     const orders = await ordersCollection.find().toArray();
