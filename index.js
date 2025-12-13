@@ -54,6 +54,32 @@ async function run() {
 };
 
 
+const verifyAdmin = async (req, res, next) => {
+  const email = req.decoded.email;
+  const user = await usersCollection.findOne({ email });
+  if (!user || user.role !== "admin") {
+    return res.status(403).send({ message: "Access denied" });
+  }
+  next();
+};
+
+
+const verifyFraudChef = async (req, res, next) => {
+  const email = req.user.email;
+
+  const user = await usersCollection.findOne({ email });
+
+  if (user?.status === "fraud") {
+    return res.status(403).send({
+      message: "Fraud chefs cannot create meals",
+    });
+  }
+
+  next();
+};
+
+
+
     app.post("/requests", async (req, res) => {
   try {
     const request = req.body; 
@@ -226,18 +252,90 @@ app.delete("/favorites/:id", verifyJWT, async (req, res) => {
   }
 });
 
-
-
-
-app.post("/orders", async (req, res) => {
+const verifyFraudUser = async (req, res, next) => {
   try {
-    const orderData = req.body; 
-    const result = await ordersCollection.insertOne(orderData);
-    res.send({ insertedId: result.insertedId });
-  } catch (err) {
-    res.status(500).send({ error: "Server error" });
+    const email = req.user.email;
+
+    const user = await usersCollection.findOne({ email });
+
+    if (!user) {
+      return res.status(401).send({ message: "User not found" });
+    }
+
+    if (user.status === "fraud") {
+      return res.status(403).send({
+        message: "Fraud users cannot place orders",
+      });
+    }
+
+    next();
+  } catch (error) {
+    res.status(500).send({
+      message: "Fraud verification failed",
+      error,
+    });
+  }
+};
+
+
+app.patch("/users/fraud/:id", verifyJWT, verifyAdmin, async (req, res) => {
+  try {
+    const id = req.params.id;
+
+    const result = await usersCollection.updateOne(
+      { _id: new ObjectId(id) },
+      { $set: { status: "fraud" } }
+    );
+
+    if (result.modifiedCount === 0) {
+      return res.status(404).send({ message: "User not found" });
+    }
+
+    res.send({
+      success: true,
+      message: "User marked as fraud successfully",
+    });
+  } catch (error) {
+    console.error("Make Fraud Error:", error);
+    res.status(500).send({ message: "Failed to mark user as fraud" });
   }
 });
+
+
+
+
+
+app.post("/orders", verifyJWT, async (req, res) => {
+  try {
+    const email = req.decoded.email;
+
+    const user = await usersCollection.findOne({ email });
+
+    if (!user) {
+      return res.status(404).send({ message: "User not found" });
+    }
+
+    if (user.status === "fraud") {
+      return res.status(403).send({
+        message: "Fraud users cannot place orders",
+      });
+    }
+
+    const order = {
+      ...req.body,
+      userEmail: email, // 🔒 frontend এর email ignore
+      createdAt: new Date(),
+    };
+
+    const result = await ordersCollection.insertOne(order);
+    res.send(result);
+  } catch (err) {
+    console.error(err);
+    res.status(500).send({ message: "Order failed" });
+  }
+});
+
+
 
 
 app.get("/orders", verifyJWT, async (req, res) => {
@@ -359,28 +457,30 @@ app.put("/meals/:id", async (req, res) => {
 
 
 
-app.post("/meals", async (req, res) => {
+app.post("/meals", verifyJWT, async (req, res) => {
   try {
-    const meal = req.body;
+    const email = req.decoded.email;
+    const chef = await usersCollection.findOne({ email });
 
-    meal.createdAt = new Date();
+    if (!chef) return res.status(404).send({ message: "Chef not found" });
+    if (chef.status === "fraud") return res.status(403).send({ message: "Fraud chefs cannot create meals" });
+
+    const meal = {
+      ...req.body,
+      chefId: chef._id,
+      chefEmail: chef.email,
+      createdAt: new Date(),
+    };
 
     const result = await mealsCollection.insertOne(meal);
 
-    res.send({
-      success: true,
-      message: "Meal created successfully",
-      result
-    });
-
+    res.send({ success: true, message: "Meal created successfully", result });
   } catch (err) {
-    res.status(500).send({
-      success: false,
-      message: "Meal creation failed",
-      error: err
-    });
+    console.error("Create meal error:", err);
+    res.status(500).send({ success: false, message: "Meal creation failed", error: err.message });
   }
 });
+
 
 
 
@@ -407,16 +507,6 @@ app.post("/meals", async (req, res) => {
 
 
 
-   
-
-const verifyAdmin = async (req, res, next) => {
-  const email = req.decoded.email;
-  const user = await usersCollection.findOne({ email });
-  if (!user || user.role !== "admin") {
-    return res.status(403).send({ message: "Access denied" });
-  }
-  next();
-};
 
 
 app.get("/all-users", verifyJWT, verifyAdmin, async (req, res) => {
