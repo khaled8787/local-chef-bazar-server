@@ -64,20 +64,6 @@ const verifyAdmin = async (req, res, next) => {
 };
 
 
-const verifyFraudChef = async (req, res, next) => {
-  const email = req.user.email;
-
-  const user = await usersCollection.findOne({ email });
-
-  if (user?.status === "fraud") {
-    return res.status(403).send({
-      message: "Fraud chefs cannot create meals",
-    });
-  }
-
-  next();
-};
-
 
 
     app.post("/requests", async (req, res) => {
@@ -481,6 +467,72 @@ app.post("/meals", verifyJWT, async (req, res) => {
   }
 });
 
+
+
+app.get("/role-requests", verifyJWT, verifyAdmin, async (req, res) => {
+const result = await requestsCollection.find().sort({ requestTime: -1 }).toArray();
+res.send(result);
+});
+
+
+
+// ==========================
+// Role Requests PATCH Route
+// ==========================
+app.patch("/role-requests/:id", verifyJWT, verifyAdmin, async (req, res) => {
+  try {
+    const { id } = req.params; // string id
+    const { action } = req.body;
+
+    // 🔹 Directly query with string _id
+    const request = await requestsCollection.findOne({ _id: id });
+    if (!request) {
+      return res.status(404).send({ message: "Request not found" });
+    }
+
+    // ===== APPROVE =====
+    if (action === "approve") {
+      const updateUser = {};
+
+      if (request.requestType === "chef") {
+        updateUser.role = "chef";
+        updateUser.chefId = `chef-${Math.floor(1000 + Math.random() * 9000)}`;
+      }
+
+      if (request.requestType === "admin") {
+        updateUser.role = "admin";
+      }
+
+      await usersCollection.updateOne(
+        { email: request.userEmail },
+        { $set: updateUser }
+      );
+
+      await requestsCollection.updateOne(
+        { _id: id },
+        { $set: { requestStatus: "approved" } }
+      );
+
+      return res.send({ success: true, message: "Request approved" });
+    }
+
+    // ===== REJECT =====
+    if (action === "reject") {
+      await requestsCollection.updateOne(
+        { _id: id },
+        { $set: { requestStatus: "rejected" } }
+      );
+
+      return res.send({ success: true, message: "Request rejected" });
+    }
+
+    // ===== INVALID ACTION =====
+    res.status(400).send({ message: "Invalid action" });
+  } catch (error) {
+    console.error("PATCH /role-requests/:id error:", error);
+    res.status(500).send({ message: "Server error" });
+  }
+});
 
 
 
