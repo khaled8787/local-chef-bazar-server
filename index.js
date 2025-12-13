@@ -468,6 +468,35 @@ app.post("/meals", verifyJWT, async (req, res) => {
 });
 
 
+app.get("/admin/platform-stats", verifyJWT, verifyAdmin, async (req, res) => {
+  try {
+    // মোট ইউজার
+    const totalUsers = await usersCollection.countDocuments();
+
+    // অর্ডারের স্ট্যাটাস অনুযায়ী গণনা
+    const ordersPending = await ordersCollection.countDocuments({ orderStatus: "pending" });
+    const ordersDelivered = await ordersCollection.countDocuments({ orderStatus: "delivered" });
+
+    // মোট পেমেন্ট
+    const payments = await paymentsCollection.aggregate([
+      { $group: { _id: null, total: { $sum: "$amount" } } },
+    ]).toArray();
+    const totalPayments = payments[0]?.total || 0;
+
+    res.send({
+      totalUsers,
+      ordersPending,
+      ordersDelivered,
+      totalPayments,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).send({ message: "Server error" });
+  }
+});
+
+
+
 
 app.get("/role-requests", verifyJWT, verifyAdmin, async (req, res) => {
 const result = await requestsCollection.find().sort({ requestTime: -1 }).toArray();
