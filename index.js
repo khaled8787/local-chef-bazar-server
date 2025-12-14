@@ -384,6 +384,16 @@ app.post("/reviews", async (req, res) => {
   res.send(result);
 });
 
+
+app.get("/reviews", async (req, res) => {
+  const { foodId } = req.query;
+  const result = await reviewsCollection
+    .find({ foodId })
+    .sort({ date: -1 })
+    .toArray();
+  res.send(result);
+});
+
 app.get("/meals/:id", async (req, res) => {
   const id = req.params.id;
   const query = { _id: new ObjectId(id) };
@@ -414,13 +424,14 @@ app.delete("/meals/:id", async (req, res) => {
 app.get("/meals/by-chef/:email", async (req, res) => {
   const email = req.params.email;
   try {
-    const result = await mealsCollection.find({ userEmail: email }).toArray();
+    const result = await mealsCollection.find({ chefEmail: email }).toArray();
     res.send(result);
   } catch (error) {
     console.error(error);
     res.status(500).send({ message: "Something went wrong", error });
   }
 });
+
 
 
 
@@ -579,6 +590,7 @@ app.patch("/role-requests/:id", verifyJWT, verifyAdmin, async (req, res) => {
     name: user.name,
     email: user.email,
     photo: user.photoURL,
+    address: user.address,
     role: "user", 
     createdAt: new Date(),
   });
