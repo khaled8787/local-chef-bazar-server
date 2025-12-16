@@ -12,6 +12,8 @@ const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 app.use(cors());
 app.use(express.json());
 
+
+
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@practice-mongo.h6y3sbv.mongodb.net/?appName=Practice-mongo`;
 const client = new MongoClient(uri, {
   serverApi: {
@@ -33,6 +35,7 @@ async function run() {
     const favoritesCollection = db.collection('favorite');
     const ordersCollection = db.collection('orders');
     const paymentsCollection = db.collection('payments');
+
 
 
 
@@ -79,7 +82,7 @@ const verifyAdmin = async (req, res, next) => {
 
 app.post("/create-payment-intent", verifyJWT, async (req, res) => {
   const { price } = req.body;
-  const amount = parseInt(price * 100); // Stripe amount requires cents
+  const amount = parseInt(price * 100); 
 
   try {
     const paymentIntent = await stripe.paymentIntents.create({
@@ -102,10 +105,8 @@ app.post("/payments", verifyJWT, async (req, res) => {
   const payment = req.body;
 
   try {
-    // Save payment history
     const paymentResult = await paymentsCollection.insertOne(payment);
 
-    // Update order payment status
     await ordersCollection.updateOne(
       { _id: new ObjectId(payment.orderId) },
       { $set: { paymentStatus: "paid" } }
@@ -119,7 +120,6 @@ app.post("/payments", verifyJWT, async (req, res) => {
 });
 
 
-// GET order by ID
 app.get("/orders/:id", verifyJWT, async (req, res) => {
   try {
     const orderId = req.params.id;
@@ -135,11 +135,9 @@ app.get("/orders/:id", verifyJWT, async (req, res) => {
 });
 
 
-// Example: server/index.js
 app.patch("/orders/:id/pay", async (req, res) => {
   const orderId = req.params.id;
-  const { paymentInfo } = req.body; // payment result বা stripe info
-
+  const { paymentInfo } = req.body; 
   try {
     const result = await ordersCollection.updateOne(
       { _id: new ObjectId(orderId) },
@@ -173,7 +171,6 @@ app.get("/reviews/user/:name", verifyJWT, async (req, res) => {
   }
 });
 
-// Delete a review
 app.delete("/reviews/:id", verifyJWT, async (req, res) => {
   try {
     const id = req.params.id;
@@ -189,7 +186,6 @@ app.delete("/reviews/:id", verifyJWT, async (req, res) => {
   }
 });
 
-// Update a review
 app.patch("/reviews/:id", verifyJWT, async (req, res) => {
   try {
     const id = req.params.id;
@@ -211,7 +207,6 @@ app.patch("/reviews/:id", verifyJWT, async (req, res) => {
 
 
 
-// Get favorite meals by user email
 app.get("/favorites/user/:email", verifyJWT, async (req, res) => {
   try {
     const email = req.params.email;
@@ -226,7 +221,6 @@ app.get("/favorites/user/:email", verifyJWT, async (req, res) => {
   }
 });
 
-// Delete favorite meal
 app.delete("/favorites/:id", verifyJWT, async (req, res) => {
   try {
     const id = req.params.id;
@@ -238,30 +232,6 @@ app.delete("/favorites/:id", verifyJWT, async (req, res) => {
   }
 });
 
-const verifyFraudUser = async (req, res, next) => {
-  try {
-    const email = req.user.email;
-
-    const user = await usersCollection.findOne({ email });
-
-    if (!user) {
-      return res.status(401).send({ message: "User not found" });
-    }
-
-    if (user.status === "fraud") {
-      return res.status(403).send({
-        message: "Fraud users cannot place orders",
-      });
-    }
-
-    next();
-  } catch (error) {
-    res.status(500).send({
-      message: "Fraud verification failed",
-      error,
-    });
-  }
-};
 
 
 app.patch("/users/fraud/:id", verifyJWT, verifyAdmin, async (req, res) => {
@@ -309,7 +279,7 @@ app.post("/orders", verifyJWT, async (req, res) => {
 
     const order = {
       ...req.body,
-      userEmail: email, // 🔒 frontend এর email ignore
+      userEmail: email, 
       createdAt: new Date(),
     };
 
@@ -481,14 +451,11 @@ app.post("/meals", verifyJWT, async (req, res) => {
 
 app.get("/admin/platform-stats", verifyJWT, verifyAdmin, async (req, res) => {
   try {
-    // মোট ইউজার
     const totalUsers = await usersCollection.countDocuments();
 
-    // অর্ডারের স্ট্যাটাস অনুযায়ী গণনা
     const ordersPending = await ordersCollection.countDocuments({ orderStatus: "pending" });
     const ordersDelivered = await ordersCollection.countDocuments({ orderStatus: "delivered" });
 
-    // মোট পেমেন্ট
     const payments = await paymentsCollection.aggregate([
       { $group: { _id: null, total: { $sum: "$amount" } } },
     ]).toArray();
@@ -516,21 +483,16 @@ res.send(result);
 
 
 
-// ==========================
-// Role Requests PATCH Route
-// ==========================
 app.patch("/role-requests/:id", verifyJWT, verifyAdmin, async (req, res) => {
   try {
-    const { id } = req.params; // string id
+    const { id } = req.params; 
     const { action } = req.body;
 
-    // 🔹 Directly query with string _id
     const request = await requestsCollection.findOne({ _id: id });
     if (!request) {
       return res.status(404).send({ message: "Request not found" });
     }
 
-    // ===== APPROVE =====
     if (action === "approve") {
       const updateUser = {};
 
@@ -556,7 +518,6 @@ app.patch("/role-requests/:id", verifyJWT, verifyAdmin, async (req, res) => {
       return res.send({ success: true, message: "Request approved" });
     }
 
-    // ===== REJECT =====
     if (action === "reject") {
       await requestsCollection.updateOne(
         { _id: id },
@@ -566,7 +527,6 @@ app.patch("/role-requests/:id", verifyJWT, verifyAdmin, async (req, res) => {
       return res.send({ success: true, message: "Request rejected" });
     }
 
-    // ===== INVALID ACTION =====
     res.status(400).send({ message: "Invalid action" });
   } catch (error) {
     console.error("PATCH /role-requests/:id error:", error);
