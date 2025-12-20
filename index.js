@@ -409,15 +409,38 @@ app.get("/orders/user/:email", async (req, res) => {
 
 
 app.get("/meals", async (req, res) => {
-  const sort = req.query.sort === "desc" ? -1 : 1;
+  try {
+    const sort = req.query.sort === "desc" ? -1 : 1;
+    const page = parseInt(req.query.page) || 1;
+    const limit = 10;
+    const skip = (page - 1) * limit;
 
-  const meals = await mealsCollection
-    .find()
-    .sort({ price: sort })
-    .toArray();
+    const search = req.query.search || "";
 
-  res.send(meals);
+    const query = search
+      ? { foodName: { $regex: search, $options: "i" } }
+      : {};
+
+    const totalMeals = await mealsCollection.countDocuments(query);
+
+    const meals = await mealsCollection
+      .find(query)
+      .sort({ price: sort })
+      .skip(skip)
+      .limit(limit)
+      .toArray();
+
+    res.send({
+      meals,
+      totalMeals,
+      totalPages: Math.ceil(totalMeals / limit),
+      currentPage: page,
+    });
+  } catch (err) {
+    res.status(500).send({ message: "Failed to fetch meals" });
+  }
 });
+
 
 
 app.post("/reviews", async (req, res) => {
