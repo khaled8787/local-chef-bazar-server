@@ -1,7 +1,6 @@
 const express = require('express');
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const cors = require('cors');
-const jwt = require("jsonwebtoken");
 require('dotenv').config();
 
 const app = express();
@@ -26,7 +25,6 @@ const client = new MongoClient(uri, {
 
 async function run() {
   try {
-    await client.connect();
     const db = client.db("LocalChefBazar");
     const mealsCollection = db.collection("meals");
     const reviewsCollection = db.collection('reviews');
@@ -39,32 +37,27 @@ async function run() {
 
 
 
-     const verifyJWT = (req, res, next) => {
-  const authHeader = req.headers.authorization;
-
-  if (!authHeader)
-    return res.status(401).send({ message: "Unauthorized" });
-
-  const token = authHeader.split(" ")[1];
-
-  jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
-    if (err)
-      return res.status(403).send({ message: "Forbidden" });
-
-    req.decoded = decoded;
-    next();
-  });
-};
 
 
-const verifyAdmin = async (req, res, next) => {
-  const email = req.decoded.email;
-  const user = await usersCollection.findOne({ email });
-  if (!user || user.role !== "admin") {
-    return res.status(403).send({ message: "Access denied" });
+app.get("/me", async (req, res) => {
+  try {
+    const email = req.query.email;
+    if (!email) return res.status(400).send({ message: "Email is required" });
+
+    const user = await usersCollection.findOne({ email });
+
+    if (!user) return res.status(404).send({ message: "User not found" });
+
+    if (!user.role) user.role = "user";
+
+    res.send(user);
+  } catch (err) {
+    res.status(500).send({ message: "Server error" });
   }
-  next();
-};
+});
+
+
+
 
 
 
@@ -72,15 +65,21 @@ const verifyAdmin = async (req, res, next) => {
     app.post("/requests", async (req, res) => {
   try {
     const request = req.body; 
+    if (!request || Object.keys(request).length === 0) {
+      return res.status(400).send({ success: false, message: "Request data is required" });
+    }
+
     const result = await requestsCollection.insertOne(request);
     res.send({ success: true, result });
   } catch (err) {
-    res.status(500).send({ success: false, message: "Failed to create request", error: err });
+    console.error("Failed to create request:", err);
+    res.status(500).send({ success: false, message: "Failed to create request", error: err.message });
   }
 });
 
 
-app.post("/create-payment-intent", verifyJWT, async (req, res) => {
+
+app.post("/create-payment-intent", async (req, res) => {
   const { price } = req.body;
   const amount = parseInt(price * 100); 
 
@@ -101,7 +100,7 @@ app.post("/create-payment-intent", verifyJWT, async (req, res) => {
 });
 
 
-app.post("/payments", verifyJWT, async (req, res) => {
+app.post("/payments", async (req, res) => {
   const payment = req.body;
 
   try {
@@ -119,8 +118,7 @@ app.post("/payments", verifyJWT, async (req, res) => {
   }
 });
 
-
-app.get("/orders/:id", verifyJWT, async (req, res) => {
+app.get("/orders/:id", async (req, res) => {
   try {
     const orderId = req.params.id;
     const order = await ordersCollection.findOne({ _id: new ObjectId(orderId) });
@@ -133,6 +131,23 @@ app.get("/orders/:id", verifyJWT, async (req, res) => {
     res.status(500).send({ error: "Failed to fetch order" });
   }
 });
+
+app.get("/favorites/my", async (req, res) => {
+  const email = req.user.email; 
+  try {
+    const favorites = await favoritesCollection
+      .find({ userEmail: email })
+      .sort({ dateAdded: -1 })
+      .toArray();
+    res.send(favorites);
+  } catch (err) {
+    console.error(err);
+    res.status(500).send({ error: "Failed to fetch favorites" });
+  }
+});
+
+
+
 
 
 app.patch("/orders/:id/pay", async (req, res) => {
@@ -157,21 +172,41 @@ app.patch("/orders/:id/pay", async (req, res) => {
 
 
 
-app.get("/reviews/user/:name", verifyJWT, async (req, res) => {
+app.get("/reviews", async (req, res) => {
+  try {
+    const reviews = await reviewsCollection
+      .find({})
+      .sort({ date: -1 }) 
+      .toArray();
+
+    res.send(reviews);
+  } catch (err) {
+    console.error("Failed to fetch all reviews:", err);
+    res.status(500).send({ message: "Failed to fetch reviews" });
+  }
+});
+
+
+
+app.get("/reviews/user/:name", async (req, res) => {
   try {
     const name = req.params.name;
+    if (!name) return res.status(400).send({ message: "Name is required" });
+
     const reviews = await reviewsCollection
       .find({ reviewerName: name })
       .sort({ date: -1 })
       .toArray();
+
     res.send(reviews);
   } catch (err) {
-    console.error(err);
-    res.status(500).send({ error: "Failed to fetch reviews" });
+    console.error("Failed to fetch reviews:", err);
+    res.status(500).send({ message: "Internal Server Error" });
   }
 });
 
-app.delete("/reviews/:id", verifyJWT, async (req, res) => {
+
+app.delete("/reviews/:id", async (req, res) => {
   try {
     const id = req.params.id;
     const result = await reviewsCollection.deleteOne({ _id: new ObjectId(id) });
@@ -186,7 +221,7 @@ app.delete("/reviews/:id", verifyJWT, async (req, res) => {
   }
 });
 
-app.patch("/reviews/:id", verifyJWT, async (req, res) => {
+app.patch("/reviews/:id", async (req, res) => {
   try {
     const id = req.params.id;
     const { rating, comment } = req.body;
@@ -207,7 +242,45 @@ app.patch("/reviews/:id", verifyJWT, async (req, res) => {
 
 
 
-app.get("/favorites/user/:email", verifyJWT, async (req, res) => {
+app.get("/reviews/by-meal", async (req, res) => {
+  try {
+    const mealId = req.query.mealId; 
+
+    if (!mealId) {
+      return res.status(400).send({ message: "mealId is required" });
+    }
+
+    const reviews = await reviewsCollection
+      .find({ foodId: mealId })
+      .sort({ date: -1 })
+      .toArray();
+
+    res.send(reviews);
+  } catch (err) {
+    console.error("Failed to fetch meal reviews:", err);
+    res.status(500).send({ message: "Internal Server Error" });
+  }
+});
+
+
+
+app.get("/reviews/my", async (req, res) => {
+  try {
+    const email = req.query.email;
+    if (!email) return res.status(400).send({ message: "Email is required" });
+
+    const reviews = await reviewsCollection.find({ reviewerEmail: email }).toArray();
+    res.send(reviews);
+  } catch (err) {
+    console.error("Failed to fetch reviews:", err);
+    res.status(500).send({ message: "Internal Server Error" });
+  }
+});
+
+
+
+
+app.get("/favorites/user/:email", async (req, res) => {
   try {
     const email = req.params.email;
     const favorites = await favoritesCollection
@@ -221,7 +294,7 @@ app.get("/favorites/user/:email", verifyJWT, async (req, res) => {
   }
 });
 
-app.delete("/favorites/:id", verifyJWT, async (req, res) => {
+app.delete("/favorites/:id", async (req, res) => {
   try {
     const id = req.params.id;
     const result = await favoritesCollection.deleteOne({ _id: new ObjectId(id) });
@@ -234,7 +307,7 @@ app.delete("/favorites/:id", verifyJWT, async (req, res) => {
 
 
 
-app.patch("/users/fraud/:id", verifyJWT, verifyAdmin, async (req, res) => {
+app.patch("/users/fraud/:id", async (req, res) => {
   try {
     const id = req.params.id;
 
@@ -261,25 +334,19 @@ app.patch("/users/fraud/:id", verifyJWT, verifyAdmin, async (req, res) => {
 
 
 
-app.post("/orders", verifyJWT, async (req, res) => {
+app.post("/orders", async (req, res) => {
   try {
-    const email = req.decoded.email;
+    const { userEmail, ...orderData } = req.body;
 
-    const user = await usersCollection.findOne({ email });
+    if (!userEmail) return res.status(400).send({ message: "User email is required" });
 
-    if (!user) {
-      return res.status(404).send({ message: "User not found" });
-    }
-
-    if (user.status === "fraud") {
-      return res.status(403).send({
-        message: "Fraud users cannot place orders",
-      });
-    }
+    const user = await usersCollection.findOne({ email: userEmail });
+    if (!user) return res.status(404).send({ message: "User not found" });
+    if (user.status === "fraud") return res.status(403).send({ message: "Fraud users cannot place orders" });
 
     const order = {
-      ...req.body,
-      userEmail: email, 
+      ...orderData,
+      userEmail,
       createdAt: new Date(),
     };
 
@@ -294,7 +361,7 @@ app.post("/orders", verifyJWT, async (req, res) => {
 
 
 
-app.get("/orders", verifyJWT, async (req, res) => {
+app.get("/orders", async (req, res) => {
   try {
     const orders = await ordersCollection.find().toArray();
     res.send(orders);
@@ -305,7 +372,7 @@ app.get("/orders", verifyJWT, async (req, res) => {
 
 
 
-app.patch("/orders/:id/status", verifyJWT, async (req, res) => {
+app.patch("/orders/:id/status", async (req, res) => {
   const { status } = req.body; 
   const orderId = req.params.id;
 
@@ -327,11 +394,15 @@ app.patch("/orders/:id/status", verifyJWT, async (req, res) => {
 });
 
 
-app.get("/orders/user/:email", verifyJWT, async (req, res) => {
+app.get("/orders/user/:email", async (req, res) => {
   const email = req.params.email;
-
-  const result = await ordersCollection.find({ userEmail: email }).toArray();
-  res.send(result);
+  try {
+    const orders = await ordersCollection.find({ userEmail: email }).toArray();
+    res.send(orders);
+  } catch (err) {
+    console.error(err);
+    res.status(500).send({ message: "Failed to fetch user orders" });
+  }
 });
 
 
@@ -355,14 +426,20 @@ app.post("/reviews", async (req, res) => {
 });
 
 
-app.get("/reviews", async (req, res) => {
-  const { foodId } = req.query;
-  const result = await reviewsCollection
-    .find({ foodId })
-    .sort({ date: -1 })
-    .toArray();
-  res.send(result);
+app.get("/home-reviews", async (req, res) => {
+  try {
+    const result = await reviewsCollection
+      .find({})
+      .sort({ date: -1 })
+      .limit(6) 
+      .toArray();
+    res.send(result);
+  } catch (err) {
+    console.error(err);
+    res.status(500).send({ message: "Server error" });
+  }
 });
+
 
 app.get("/meals/:id", async (req, res) => {
   const id = req.params.id;
@@ -424,32 +501,55 @@ app.put("/meals/:id", async (req, res) => {
 
 
 
-app.post("/meals", verifyJWT, async (req, res) => {
+app.post("/meals", async (req, res) => {
   try {
-    const email = req.decoded.email;
-    const chef = await usersCollection.findOne({ email });
+    const { chefEmail } = req.body;
 
-    if (!chef) return res.status(404).send({ message: "Chef not found" });
-    if (chef.status === "fraud") return res.status(403).send({ message: "Fraud chefs cannot create meals" });
+    if (!chefEmail) {
+      return res.status(400).send({ message: "Chef email is required" });
+    }
+
+    const chef = await usersCollection.findOne({ email: chefEmail });
+
+    if (!chef) {
+      return res.status(404).send({ message: "Chef not found" });
+    }
+
+    if (chef.status === "fraud") {
+      return res
+        .status(403)
+        .send({ message: "Fraud chefs cannot create meals" });
+    }
 
     const meal = {
       ...req.body,
       chefId: chef._id,
       chefEmail: chef.email,
+      chefName: chef.name,
       createdAt: new Date(),
+      status: "pending",
     };
 
     const result = await mealsCollection.insertOne(meal);
 
-    res.send({ success: true, message: "Meal created successfully", result });
+    res.send({
+      success: true,
+      message: "Meal created successfully",
+      insertedId: result.insertedId,
+    });
   } catch (err) {
     console.error("Create meal error:", err);
-    res.status(500).send({ success: false, message: "Meal creation failed", error: err.message });
+    res.status(500).send({
+      success: false,
+      message: "Meal creation failed",
+      error: err.message,
+    });
   }
 });
 
 
-app.get("/admin/platform-stats", verifyJWT, verifyAdmin, async (req, res) => {
+
+app.get("/admin/platform-stats", async (req, res) => {
   try {
     const totalUsers = await usersCollection.countDocuments();
 
@@ -476,19 +576,25 @@ app.get("/admin/platform-stats", verifyJWT, verifyAdmin, async (req, res) => {
 
 
 
-app.get("/role-requests", verifyJWT, verifyAdmin, async (req, res) => {
-const result = await requestsCollection.find().sort({ requestTime: -1 }).toArray();
-res.send(result);
+app.get("/role-requests", async (req, res) => {
+  const result = await requestsCollection.find().sort({ requestTime: -1 }).toArray();
+  res.send(result);
 });
 
 
 
-app.patch("/role-requests/:id", verifyJWT, verifyAdmin, async (req, res) => {
+app.patch("/role-requests/:id", async (req, res) => {
   try {
-    const { id } = req.params; 
+    const { id } = req.params;
     const { action } = req.body;
 
-    const request = await requestsCollection.findOne({ _id: id });
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).send({ message: "Invalid request ID" });
+    }
+
+    const requestId = new ObjectId(id);
+
+    const request = await requestsCollection.findOne({ _id: requestId });
     if (!request) {
       return res.status(404).send({ message: "Request not found" });
     }
@@ -511,7 +617,7 @@ app.patch("/role-requests/:id", verifyJWT, verifyAdmin, async (req, res) => {
       );
 
       await requestsCollection.updateOne(
-        { _id: id },
+        { _id: requestId },
         { $set: { requestStatus: "approved" } }
       );
 
@@ -520,7 +626,7 @@ app.patch("/role-requests/:id", verifyJWT, verifyAdmin, async (req, res) => {
 
     if (action === "reject") {
       await requestsCollection.updateOne(
-        { _id: id },
+        { _id: requestId },
         { $set: { requestStatus: "rejected" } }
       );
 
@@ -530,10 +636,9 @@ app.patch("/role-requests/:id", verifyJWT, verifyAdmin, async (req, res) => {
     res.status(400).send({ message: "Invalid action" });
   } catch (error) {
     console.error("PATCH /role-requests/:id error:", error);
-    res.status(500).send({ message: "Server error" });
+    res.status(500).send({ message: "Server error", error });
   }
 });
-
 
 
 
@@ -562,7 +667,7 @@ app.patch("/role-requests/:id", verifyJWT, verifyAdmin, async (req, res) => {
 
 
 
-app.get("/all-users", verifyJWT, verifyAdmin, async (req, res) => {
+app.get("/all-users", async (req, res) => {
   const users = await usersCollection.find().toArray();
   res.send(users);
 });
@@ -587,7 +692,7 @@ app.get('/users/:email', async (req, res) => {
 
 
 
- app.put("/chefs/status/:id", verifyJWT, verifyAdmin, async (req, res) => {
+ app.put("/chefs/status/:id", async (req, res) => {
       const id = req.params.id;
       const { status } = req.body; 
 
@@ -651,7 +756,7 @@ app.patch("/users/admin/:id", async (req, res) => {
 
 
 
-app.get("/users", verifyJWT, verifyAdmin, async (req, res) => {
+app.get("/users", async (req, res) => {
   try {
     const users = await usersCollection.find().toArray();
     res.send(users);
@@ -660,7 +765,7 @@ app.get("/users", verifyJWT, verifyAdmin, async (req, res) => {
   }
 });
 
-app.get("/chefs", verifyJWT, verifyAdmin, async (req, res) => {
+app.get("/chefs", async (req, res) => {
   try {
     const chefs = await usersCollection.find({ role: "chef" }).toArray();
     res.send(chefs);
@@ -669,7 +774,7 @@ app.get("/chefs", verifyJWT, verifyAdmin, async (req, res) => {
   }
 });
 
-app.get("/orders", verifyJWT, verifyAdmin, async (req, res) => {
+app.get("/orders", async (req, res) => {
   try {
     const orders = await ordersCollection.find().toArray();
     res.send(orders);
@@ -679,30 +784,6 @@ app.get("/orders", verifyJWT, verifyAdmin, async (req, res) => {
 });
 
 
-
-    app.post("/jwt", (req, res) => {
-  const email = req.body.email;
-
-  const token = jwt.sign({ email }, process.env.JWT_SECRET, {
-    expiresIn: "7d",
-  });
-
-  res.send({ token });
-});
-
-app.get("/home-reviews", async (req, res) => {
-  try {
-    const reviews = await reviewsCollection
-      .find()
-      .sort({ date: -1 })
-      .limit(6)
-      .toArray();
-
-    res.send(reviews);
-  } catch (err) {
-    res.status(500).send({ message: "Failed to fetch home reviews", error: err });
-  }
-});
 
 
    
