@@ -57,6 +57,36 @@ app.get("/me", async (req, res) => {
 });
 
 
+app.patch("/users/:id", async (req, res) => {
+  try {
+    const id = req.params.id;
+    const { name, photo, address } = req.body;
+
+    const updatedUser = {
+      $set: {
+        name,
+        photo,
+        address,
+      },
+    };
+
+    const result = await usersCollection.updateOne(
+      { _id: new ObjectId(id) },
+      updatedUser
+    );
+
+    res.send({
+      success: true,
+      modifiedCount: result.modifiedCount,
+    });
+  } catch (error) {
+    console.error("Profile update error:", error);
+    res.status(500).send({
+      success: false,
+      message: "Failed to update profile",
+    });
+  }
+});
 
 
 
